@@ -1,3 +1,5 @@
+Apex Trigger
+
 trigger IsPrimayContact on Contact (before insert, before update, after update) {
 
     Set<Id> setOfAccIds = new Set<Id>();
@@ -43,6 +45,34 @@ trigger IsPrimayContact on Contact (before insert, before update, after update) 
             if (!primaryContactIds.isEmpty()) {
                 primaryContactHandler.updatePrimaryContactPhoneAsync(primaryContactIds);
             }
+        }
+    }
+}
+
+Apex Class
+
+public class primaryContactHandler {
+    @future
+    public static void updatePrimaryContactPhoneAsync(List<Id> primaryContactIds) {
+        List<Contact> primaryContacts = [SELECT Id, AccountId, Primary_Contact_Phone__c FROM Contact WHERE Id IN :primaryContactIds];
+
+        Set<Id> accountIds = new Set<Id>();
+        for (Contact con : primaryContacts) {
+            accountIds.add(con.AccountId);
+        }
+
+        List<Contact> relatedContacts = [SELECT Id, AccountId, Primary_Contact_Phone__c FROM Contact WHERE AccountId IN :accountIds AND Is_Primary_Contact__c = false];
+
+        for (Contact relatedCon : relatedContacts) {
+            for (Contact primaryCon : primaryContacts) {
+                if (relatedCon.AccountId == primaryCon.AccountId) {
+                    relatedCon.Primary_Contact_Phone__c = primaryCon.Primary_Contact_Phone__c;
+                }
+            }
+        }
+
+        if (!relatedContacts.isEmpty()) {
+            update relatedContacts;
         }
     }
 }
