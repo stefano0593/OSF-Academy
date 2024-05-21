@@ -1,0 +1,71 @@
+OpportunitySummaryBatch
+
+public class OpportunitySummaryBatch implements Database.Batchable<sObject> {
+    public Database.QueryLocator start(Database.BatchableContext BC) {
+        Date startDate = Date.today().toStartOfMonth();
+        Date endDate = startDate.addMonths(1).toStartOfMonth();
+        return Database.getQueryLocator([SELECT Id, Amount, StageName, AccountId FROM Opportunity WHERE CreatedDate >= :startDate AND CreatedDate < :endDate]);
+    }
+    
+ public void execute(Database.BatchableContext BC, List<Opportunity> scope) {
+
+    Map<Id, Decimal[]> accountSummaries = new Map<Id, Decimal[]>();
+
+ 
+    for (Opportunity opp : scope) {
+   
+        if (!accountSummaries.containsKey(opp.AccountId)) {
+            accountSummaries.put(opp.AccountId, new Decimal[]{0, 0, 0}); 
+        }
+
+       
+        if (opp.StageName == 'Closed Won') {
+            accountSummaries.get(opp.AccountId)[0] += opp.Amount;
+        } else if (opp.StageName == 'Open') {
+            accountSummaries.get(opp.AccountId)[1] += opp.Amount;
+        } else if (opp.StageName == 'Closed Lost') {
+            accountSummaries.get(opp.AccountId)[2] += opp.Amount;
+        }
+    }
+
+   
+    List<Messaging.SingleEmailMessage> emailsToSend = new List<Messaging.SingleEmailMessage>();
+
+    
+    for (Id accountId : accountSummaries.keySet()) {
+      
+        Account acc = [SELECT Id, Name, Owner.Email FROM Account WHERE Id = :accountId LIMIT 1];
+
+       
+        Messaging.SingleEmailMessage email = new Messaging.SingleEmailMessage();
+        email.setToAddresses(new List<String>{acc.Owner.Email}); 
+        email.setSubject('Opportunity Summary for ' + acc.Name);
+
+      
+        String emailBody = 'Hello,\n\nPlease find below the summarized Opportunity Amounts for Account ' + acc.Name + ':\n\n';
+        emailBody += 'Closed Won Amount: $' + accountSummaries.get(accountId)[0] + '\n';
+        emailBody += 'Open Amount: $' + accountSummaries.get(accountId)[1] + '\n';
+        emailBody += 'Closed Lost Amount: $' + accountSummaries.get(accountId)[2] + '\n\n';
+        email.setPlainTextBody(emailBody);
+
+        emailsToSend.add(email);
+    }
+
+  
+    Messaging.sendEmail(emailsToSend);
+}
+
+    
+      public void finish(Database.BatchableContext BC) {
+        System.debug('Batch job completed successfully.');
+ 
+    }
+}
+
+OpportunitySummaryScheduler
+
+public class OpportunitySummaryScheduler implements Schedulable {
+    public void execute(SchedulableContext sc) {
+        Database.executeBatch(new OpportunitySummaryBatch());
+    }
+}
