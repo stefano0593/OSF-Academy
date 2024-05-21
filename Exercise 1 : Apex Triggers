@@ -1,0 +1,48 @@
+trigger IsPrimayContact on Contact (before insert, before update, after update) {
+
+    Set<Id> setOfAccIds = new Set<Id>();
+
+    for (Contact con : trigger.new) {
+        if (con.AccountId != null) {
+            setOfAccIds.add(con.AccountId);
+        }
+    }
+
+    if (!setOfAccIds.isEmpty()) {
+        Map<Id, Account> mapOfAccounts = new Map<Id, Account>(
+            [SELECT Id, (SELECT Id, Is_Primary_Contact__c FROM Contacts) 
+             FROM Account 
+             WHERE Id IN :setOfAccIds]
+        );
+
+        if (trigger.isBefore) {
+            for (Contact con : trigger.new) {
+                if (con.AccountId != null && con.Is_Primary_Contact__c) {
+                    Account acc = mapOfAccounts.get(con.AccountId);
+                    if (acc != null) {
+                        for (Contact childCon : acc.Contacts) {
+                            if (childCon.Is_Primary_Contact__c && (trigger.isInsert || con.Id != childCon.Id)) {
+                                con.addError('Contact cannot be created or updated since a Primary Contact already exists in the Account');
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (trigger.isAfter && trigger.isUpdate) {
+            List<Id> primaryContactIds = new List<Id>();
+
+            for (Contact con : trigger.new) {
+                if (con.Is_Primary_Contact__c && con.Is_Primary_Contact__c != trigger.oldMap.get(con.Id).Is_Primary_Contact__c) {
+                    primaryContactIds.add(con.Id);
+                }
+            }
+
+            if (!primaryContactIds.isEmpty()) {
+                primaryContactHandler.updatePrimaryContactPhoneAsync(primaryContactIds);
+            }
+        }
+    }
+}
