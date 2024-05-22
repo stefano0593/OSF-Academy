@@ -1,0 +1,100 @@
+Apex Class
+
+public class WeatherService {
+   
+    public class Main {
+        public Decimal temp;
+    }
+
+   
+    public class Weather {
+        public String description;
+        public String icon;
+    }
+
+    @AuraEnabled(cacheable=true)
+    public static WeatherResponse getWeather(String city) {
+        String apiKey = '536624f44f525cdabe70892cc8213f29'; 
+        String url = 'https://api.openweathermap.org/data/2.5/weather?q=' + city + '&appid=' + apiKey + '&units=metric';
+
+        Http http = new Http();
+        HttpRequest request = new HttpRequest();
+        request.setEndpoint(url);
+        request.setMethod('GET');
+
+        HttpResponse response = http.send(request);
+        if (response.getStatusCode() == 200) {
+            return (WeatherResponse) JSON.deserialize(response.getBody(), WeatherResponse.class);
+        } else {
+            throw new CalloutException('Failed to get weather data');
+        }
+    }
+
+    public class WeatherResponse {
+        public Main main;
+        public List<Weather> weather;
+    }
+}
+
+
+WeatherComponent HTML
+
+<template>
+    <lightning-card title="Weather Information">
+        <div if:true={weather}>
+            <p>Temperature: {weather.main.temp} °C</p>
+            <p>Description: {weather.weather[0].description}</p>
+            <img src={iconUrl} alt="Weather Icon"/>
+        </div>
+        <div if:true={error}>
+            <p>{error}</p>
+        </div>
+    </lightning-card>
+</template>
+
+
+WeatheComponent JavaScript
+
+import { LightningElement, api, wire } from 'lwc';
+import getWeather from '@salesforce/apex/WeatherService.getWeather';
+
+export default class WeatherComponent extends LightningElement {
+    @api recordId;
+    weather;
+    error;
+
+    @wire(getWeather, { city: 'London' }) // Replace 'London' with a dynamic city if needed
+    wiredWeather({ error, data }) {
+        if (data) {
+            this.weather = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error.body.message;
+            this.weather = undefined;
+        }
+    }
+
+    get iconUrl() {
+        return this.weather
+            ? `http://openweathermap.org/img/w/${this.weather.weather[0].icon}.png`
+            : '';
+    }
+}
+
+WeatherComponent JS-Meta
+
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>55.0</apiVersion>
+    <isExposed>true</isExposed>
+    <targets>
+        <target>lightning__RecordPage</target>
+    </targets>
+    <targetConfigs>
+        <targetConfig targets="lightning__RecordPage">
+            <objects>
+                <object>Account</object>
+            </objects>
+        </targetConfig>
+    </targetConfigs>
+</LightningComponentBundle>
